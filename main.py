@@ -10,28 +10,17 @@ import math
 mp_hands = mp.solutions.hands
 
 # -----------------------------------------------------
-# WINDOW CONTROLLER: keep topmost + regain focus
+# WINDOW CONTROLLER
 # -----------------------------------------------------
 def maintain_window(window_name):
     hwnd = win32gui.FindWindow(None, window_name)
     if not hwnd:
         return
-
     ctypes.windll.user32.SetWindowPos(
-        hwnd,
-        win32con.HWND_TOPMOST,
+        hwnd, win32con.HWND_TOPMOST,
         0, 0, 0, 0,
         win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
     )
-
-    fg = win32gui.GetForegroundWindow()
-    if fg != hwnd:
-        win32gui.SetWindowPos(
-            hwnd,
-            win32con.HWND_TOPMOST,
-            0, 0, 0, 0,
-            win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
-        )
 
 # -----------------------------------------------------
 # DRAW OVERLAY BOX
@@ -53,7 +42,7 @@ def draw_overlay_box(image, box):
     return image
 
 # -----------------------------------------------------
-# MAP TO SCREEN WITH SMOOTHING
+# MAP TO SCREEN
 # -----------------------------------------------------
 def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state,
                   SMOOTHING=0.7, SENSITIVITY=1.4):
@@ -85,10 +74,7 @@ def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state,
 # -----------------------------------------------------
 # LEFT CLICK GESTURE
 # -----------------------------------------------------
-def gesture_left_click(image, x8, y8, x12, y12,
-                       y16, y20, y7,
-                       click_state):
-
+def gesture_left_click(image, x8, y8, x12, y12, y16, y20, y7, click_state):
     blue_click = (
         y8 < y16 and y8 < y20 and
         y12 < y16 and y12 < y20 and
@@ -98,7 +84,6 @@ def gesture_left_click(image, x8, y8, x12, y12,
     if blue_click:
         cv2.circle(image, (x8, y8), 10, (255, 0, 0), -1)
         cv2.circle(image, (x12, y12), 10, (255, 0, 0), -1)
-
         if not click_state:
             pyg.click()
             click_state = True
@@ -108,22 +93,17 @@ def gesture_left_click(image, x8, y8, x12, y12,
     return click_state, blue_click
 
 # -----------------------------------------------------
-# HOLD GESTURE (DRAG MODE)
+# HOLD (DRAG)
 # -----------------------------------------------------
-def gesture_hold(image, x8, y8, x12, y12,
-                 box, prev_x, prev_y,
-                 hold_state):
-
+def gesture_hold(image, x8, y8, x12, y12, box, prev_x, prev_y, hold_state):
     PURPLE = (255, 0, 255)
     cv2.circle(image, (x8, y8), 15, PURPLE, -1)
     cv2.circle(image, (x12, y12), 15, PURPLE, -1)
 
     sw, sh = pyg.size()
-
     mapped_x, mapped_y, (prev_x, prev_y) = map_to_screen(
         x8, y8, box, sw, sh, (prev_x, prev_y),
-        SMOOTHING=0.6,
-        SENSITIVITY=1.2
+        SMOOTHING=0.6, SENSITIVITY=1.2
     )
 
     if not hold_state["down_sent"]:
@@ -135,12 +115,9 @@ def gesture_hold(image, x8, y8, x12, y12,
     return prev_x, prev_y, hold_state
 
 # -----------------------------------------------------
-# NORMAL CURSOR MOVEMENT
+# NORMAL MOVEMENT
 # -----------------------------------------------------
-def handle_gesture_actions(image, x8, y8,
-                           inside, blue_click,
-                           box, prev_x, prev_y,
-                           suppress_green=False):
+def handle_gesture_actions(image, x8, y8, inside, blue_click, box, prev_x, prev_y, suppress_green=False):
 
     if not blue_click and not suppress_green:
         col = (0, 255, 0) if inside else (0, 0, 255)
@@ -155,8 +132,9 @@ def handle_gesture_actions(image, x8, y8,
 
     return prev_x, prev_y
 
+
 # -----------------------------------------------------
-# YELLOW INDICATOR GESTURE
+# YELLOW (ALT+TAB) + Repeat
 # -----------------------------------------------------
 def gesture_yellow(image, pts):
 
@@ -183,11 +161,8 @@ def gesture_yellow(image, pts):
 
     return cond
 
-# -----------------------------------------------------
-# ALT+TAB WITH AUTO-REPEAT EVERY 1s
-# -----------------------------------------------------
-def gesture_alt_tab_repeat(yellow, state):
 
+def gesture_alt_tab_repeat(yellow, state):
     if not yellow:
         if state["active"]:
             pyg.keyUp("alt")
@@ -211,12 +186,13 @@ def gesture_alt_tab_repeat(yellow, state):
     return state
 
 # -----------------------------------------------------
-# THUMB TIP GESTURE
+# THUMB TIP → Press UP
 # -----------------------------------------------------
 def gesture_thumb_tip(image, l):
     y4 = int(l[4].y * image.shape[0])
 
-    if (y4 < int(l[3].y * image.shape[0]) and
+    if (
+        y4 < int(l[3].y * image.shape[0]) and
         y4 < int(l[2].y * image.shape[0]) and
         y4 < int(l[8].y * image.shape[0]) and
         y4 < int(l[12].y * image.shape[0]) and
@@ -225,47 +201,49 @@ def gesture_thumb_tip(image, l):
         y4 < int(l[5].y * image.shape[0]) and
         y4 < int(l[9].y * image.shape[0]) and
         y4 < int(l[13].y * image.shape[0]) and
-        y4 < int(l[17].y * image.shape[0])):
+        y4 < int(l[17].y * image.shape[0])
+    ):
         x4 = int(l[4].x * image.shape[1])
         cv2.circle(image, (x4, y4), 10, (255, 255, 255), -1)
         return True
     return False
 
 # -----------------------------------------------------
-# PEACE SIGN SHOW WHITE + PRESS ENTER ONCE
+# PEACE SIGN → Press ENTER
 # -----------------------------------------------------
 def gesture_peace_sign_show(image, l, min_angle=25):
     h, w, _ = image.shape
-
     x8, y8 = int(l[8].x * w), int(l[8].y * h)
     x12, y12 = int(l[12].x * w), int(l[12].y * h)
     x6, y6 = int(l[6].x * w), int(l[6].y * h)
     x10, y10 = int(l[10].x * w), int(l[10].y * h)
 
-    # Both fingers raised above second joint
     if y8 < y6 and y12 < y10:
-        v_index = (x8 - x6, y8 - y6)
-        v_middle = (x12 - x10, y12 - y10)
+        v1 = (x8 - x6, y8 - y6)
+        v2 = (x12 - x10, y12 - y10)
 
-        dot = v_index[0]*v_middle[0] + v_index[1]*v_middle[1]
-        mag_index = math.hypot(*v_index)
-        mag_middle = math.hypot(*v_middle)
-        if mag_index == 0 or mag_middle == 0:
+        dot = v1[0]*v2[0] + v1[1]*v2[1]
+        m1 = math.hypot(*v1)
+        m2 = math.hypot(*v2)
+
+        if m1 == 0 or m2 == 0:
             return False
-        cos_angle = dot / (mag_index * mag_middle)
-        angle = math.degrees(math.acos(max(min(cos_angle, 1), -1)))
+
+        angle = math.degrees(math.acos(max(min(dot/(m1*m2),1),-1)))
 
         if angle >= min_angle:
-            cv2.circle(image, (x8, y8), 10, (255, 255, 255), -1)
-            cv2.circle(image, (x12, y12), 10, (255, 255, 255), -1)
+            cv2.circle(image, (x8, y8), 10, (255,255,255), -1)
+            cv2.circle(image, (x12, y12), 10, (255,255,255), -1)
             return True
 
     return False
 
+
 # -----------------------------------------------------
-# MAIN PROGRAM WITH RECORDING
+# MAIN PROGRAM (WITH 3-SECOND COUNTDOWN)
 # -----------------------------------------------------
 cap = cv2.VideoCapture(0)
+
 prev_x, prev_y = None, None
 click_state = False
 hold_start_time = None
@@ -278,11 +256,16 @@ peace_state = {"active": False, "pressed": False}
 WINDOW_NAME = "Gesture Mouse"
 cv2.namedWindow(WINDOW_NAME)
 
-# --- VIDEO RECORDING SETUP ---
-fourcc = cv2.VideoWriter_fourcc(*'XVID')  # You can also use 'MJPG' or 'MP4V'
-frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-out = cv2.VideoWriter('gesture_record.avi', fourcc, 20.0, (frame_width, frame_height))
+# Video Recorder
+fourcc = cv2.VideoWriter_fourcc(*'XVID')
+frame_width = int(cap.get(3))
+frame_height = int(cap.get(4))
+out = cv2.VideoWriter("gesture_record.avi", fourcc, 20.0, (frame_width, frame_height))
+
+# ---- COUNTDOWN ----
+start_time = time.time()
+COUNTDOWN_DURATION = 5
+
 
 with mp_hands.Hands(
     model_complexity=0,
@@ -296,7 +279,52 @@ with mp_hands.Hands(
             continue
 
         h, w, _ = image.shape
-        box = (int(0.01 * w), int(0.01 * h), int(0.99 * w), int(0.80 * h))
+        box = (int(0.01*w), int(0.01*h), int(0.99*w), int(0.80*h))
+
+        now = time.time()
+        elapsed = now - start_time
+
+        # -------------------------------------------------
+        # BEFORE COUNTDOWN FINISHES → FREEZE EVERYTHING
+        # -------------------------------------------------
+        if elapsed < COUNTDOWN_DURATION:
+
+            remaining = int(COUNTDOWN_DURATION - elapsed)
+
+            # --- MIRRORED WHITE TEXT + BLACK OUTLINE ---
+            text = f"Starting in {remaining}"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            scale = 1
+            thickness = 2
+
+            # Flip first
+            flipped = cv2.flip(image, 1)
+
+            # Outline
+            cv2.putText(flipped, text, (20, 40), font, scale,
+                        (0, 0, 0), thickness + 2, cv2.LINE_AA)
+            # White text
+            cv2.putText(flipped, text, (20, 40), font, scale,
+                        (255, 255, 255), thickness, cv2.LINE_AA)
+
+            # Flip back
+            image = cv2.flip(flipped, 1)
+
+            # Record
+            out.write(image)
+
+            # Show flipped
+            cv2.imshow(WINDOW_NAME, cv2.flip(image, 1))
+            maintain_window(WINDOW_NAME)
+
+            if cv2.waitKey(5) & 0xFF == 27:
+                break
+
+            continue  # <<< IMPORTANT: SKIP EVERYTHING ELSE
+
+        # -------------------------------------------------
+        # AFTER COUNTDOWN → NORMAL GESTURES
+        # -------------------------------------------------
 
         image.flags.writeable = False
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -308,27 +336,23 @@ with mp_hands.Hands(
         if results.multi_hand_landmarks:
             for hand in results.multi_hand_landmarks:
                 l = hand.landmark
-                x8, y8 = int(l[8].x * w), int(l[8].y * h)
-                x12, y12 = int(l[12].x * w), int(l[12].y * h)
-                x16 = int(l[16].x * w)
-                y16 = int(l[16].y * h)
-                y20 = int(l[20].y * h)
-                y7 = int(l[7].y * h)
-                y11 = int(l[11].y * h)
-                y14 = int(l[14].y * h)
-                y15 = int(l[15].y * h)
-                y19 = int(l[19].y * h)
+                x8, y8 = int(l[8].x*w), int(l[8].y*h)
+                x12, y12 = int(l[12].x*w), int(l[12].y*h)
+                x16, y16 = int(l[16].x*w), int(l[16].y*h)
+
+                y20 = int(l[20].y*h)
+                y7  = int(l[7].y*h)
+                y11 = int(l[11].y*h)
+                y14 = int(l[14].y*h)
+                y15 = int(l[15].y*h)
+                y19 = int(l[19].y*h)
 
                 inside = (box[0] < x8 < box[2] and box[1] < y8 < box[3])
 
-                # LEFT CLICK
                 click_state, blue_click = gesture_left_click(
-                    image, x8, y8, x12, y12,
-                    y16, y20, y7,
-                    click_state
+                    image, x8, y8, x12, y12, y16, y20, y7, click_state
                 )
 
-                # YELLOW ALT+TAB
                 yellow = gesture_yellow(
                     image,
                     {
@@ -341,7 +365,6 @@ with mp_hands.Hands(
                 )
                 yellow_state = gesture_alt_tab_repeat(yellow, yellow_state)
 
-                # THUMB TIP
                 thumb_active = gesture_thumb_tip(image, l)
                 if thumb_active and not thumb_state["active"]:
                     pyg.press("up")
@@ -350,7 +373,6 @@ with mp_hands.Hands(
                 if not thumb_active:
                     thumb_state["pressed"] = False
 
-                # PEACE SIGN SHOW WHITE + PRESS ENTER
                 peace_active = gesture_peace_sign_show(image, l)
                 if peace_active and not peace_state["active"]:
                     pyg.press("enter")
@@ -359,7 +381,6 @@ with mp_hands.Hands(
                 if not peace_active:
                     peace_state["pressed"] = False
 
-                # HOLD / DRAG
                 if blue_click:
                     if hold_start_time is None:
                         hold_start_time = time.time()
@@ -376,24 +397,21 @@ with mp_hands.Hands(
                     hold_state = {"active": False, "down_sent": False}
                     hold_start_time = None
 
-                # NORMAL MOVEMENT
                 prev_x, prev_y = handle_gesture_actions(
                     image, x8, y8,
                     inside, blue_click,
-                    box, prev_x, prev_y, yellow or thumb_active or peace_active
+                    box, prev_x, prev_y,
+                    yellow or thumb_active or peace_active
                 )
 
-        # Write frame to video
         out.write(image)
 
-        # Show flipped image
         cv2.imshow(WINDOW_NAME, cv2.flip(image, 1))
         maintain_window(WINDOW_NAME)
 
-        # ESC to quit
         if cv2.waitKey(5) & 0xFF == 27:
             break
 
 cap.release()
-out.release()  # Release the VideoWriter
+out.release()
 cv2.destroyAllWindows()
