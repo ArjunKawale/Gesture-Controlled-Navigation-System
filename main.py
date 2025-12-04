@@ -263,7 +263,7 @@ def gesture_peace_sign_show(image, l, min_angle=25):
     return False
 
 # -----------------------------------------------------
-# MAIN PROGRAM
+# MAIN PROGRAM WITH RECORDING
 # -----------------------------------------------------
 cap = cv2.VideoCapture(0)
 prev_x, prev_y = None, None
@@ -278,6 +278,12 @@ peace_state = {"active": False, "pressed": False}
 WINDOW_NAME = "Gesture Mouse"
 cv2.namedWindow(WINDOW_NAME)
 
+# --- VIDEO RECORDING SETUP ---
+fourcc = cv2.VideoWriter_fourcc(*'XVID')  # You can also use 'MJPG' or 'MP4V'
+frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+out = cv2.VideoWriter('gesture_record.avi', fourcc, 20.0, (frame_width, frame_height))
+
 with mp_hands.Hands(
     model_complexity=0,
     min_detection_confidence=0.5,
@@ -290,13 +296,7 @@ with mp_hands.Hands(
             continue
 
         h, w, _ = image.shape
-
-        box = (
-            int(0.01 * w),
-            int(0.01 * h),
-            int(0.99 * w),
-            int(0.80 * h)
-        )
+        box = (int(0.01 * w), int(0.01 * h), int(0.99 * w), int(0.80 * h))
 
         image.flags.writeable = False
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -350,7 +350,7 @@ with mp_hands.Hands(
                 if not thumb_active:
                     thumb_state["pressed"] = False
 
-                # PEACE SIGN SHOW WHITE + PRESS ENTER ONCE
+                # PEACE SIGN SHOW WHITE + PRESS ENTER
                 peace_active = gesture_peace_sign_show(image, l)
                 if peace_active and not peace_state["active"]:
                     pyg.press("enter")
@@ -383,11 +383,17 @@ with mp_hands.Hands(
                     box, prev_x, prev_y, yellow or thumb_active or peace_active
                 )
 
+        # Write frame to video
+        out.write(image)
+
+        # Show flipped image
         cv2.imshow(WINDOW_NAME, cv2.flip(image, 1))
         maintain_window(WINDOW_NAME)
 
+        # ESC to quit
         if cv2.waitKey(5) & 0xFF == 27:
             break
 
 cap.release()
+out.release()  # Release the VideoWriter
 cv2.destroyAllWindows()
