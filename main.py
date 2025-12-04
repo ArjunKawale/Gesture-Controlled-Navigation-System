@@ -5,6 +5,7 @@ import ctypes
 import win32gui
 import win32con
 import time
+import math
 
 mp_hands = mp.solutions.hands
 
@@ -141,12 +142,10 @@ def handle_gesture_actions(image, x8, y8,
                            box, prev_x, prev_y,
                            suppress_green=False):
 
-    # Only draw green/red circle if not suppressed
     if not blue_click and not suppress_green:
         col = (0, 255, 0) if inside else (0, 0, 255)
         cv2.circle(image, (x8, y8), 8, col, -1)
 
-    # Only move cursor if not suppressed
     if inside and not blue_click and not suppress_green:
         sw, sh = pyg.size()
         mapped_x, mapped_y, (prev_x, prev_y) = map_to_screen(
@@ -212,13 +211,9 @@ def gesture_alt_tab_repeat(yellow, state):
     return state
 
 # -----------------------------------------------------
-# NEW GESTURE: THUMB TIP RAISED
+# THUMB TIP GESTURE
 # -----------------------------------------------------
 def gesture_thumb_tip(image, l):
-    """
-    Landmark 4 must be higher (smaller y) than 3, 2, 8, 12, 16, 20, 5, 9, 23, 17
-    Only landmark 4 will be marked white
-    """
     y4 = int(l[4].y * image.shape[0])
 
     if (y4 < int(l[3].y * image.shape[0]) and
@@ -237,6 +232,36 @@ def gesture_thumb_tip(image, l):
     return False
 
 # -----------------------------------------------------
+# PEACE SIGN SHOW WHITE
+# -----------------------------------------------------
+def gesture_peace_sign_show(image, l, min_angle=25):
+    h, w, _ = image.shape
+
+    x8, y8 = int(l[8].x * w), int(l[8].y * h)
+    x12, y12 = int(l[12].x * w), int(l[12].y * h)
+    x6, y6 = int(l[6].x * w), int(l[6].y * h)
+    x10, y10 = int(l[10].x * w), int(l[10].y * h)
+
+    if y8 < y6 and y12 < y10:
+        v_index = (x8 - x6, y8 - y6)
+        v_middle = (x12 - x10, y12 - y10)
+
+        dot = v_index[0]*v_middle[0] + v_index[1]*v_middle[1]
+        mag_index = math.hypot(*v_index)
+        mag_middle = math.hypot(*v_middle)
+        if mag_index == 0 or mag_middle == 0:
+            return False
+        cos_angle = dot / (mag_index * mag_middle)
+        angle = math.degrees(math.acos(max(min(cos_angle, 1), -1)))
+
+        if angle >= min_angle:
+            cv2.circle(image, (x8, y8), 10, (255, 255, 255), -1)
+            cv2.circle(image, (x12, y12), 10, (255, 255, 255), -1)
+            return True
+
+    return False
+
+# -----------------------------------------------------
 # MAIN PROGRAM
 # -----------------------------------------------------
 cap = cv2.VideoCapture(0)
@@ -246,7 +271,7 @@ hold_start_time = None
 
 yellow_state = {"active": False, "last_time": None}
 hold_state = {"active": False, "down_sent": False}
-thumb_state = {"active": False, "pressed": False}  # <-- NEW: Arrow Up state
+thumb_state = {"active": False, "pressed": False}
 
 WINDOW_NAME = "Gesture Mouse"
 cv2.namedWindow(WINDOW_NAME)
@@ -280,7 +305,6 @@ with mp_hands.Hands(
 
         if results.multi_hand_landmarks:
             for hand in results.multi_hand_landmarks:
-
                 l = hand.landmark
                 x8, y8 = int(l[8].x * w), int(l[8].y * h)
                 x12, y12 = int(l[12].x * w), int(l[12].y * h)
@@ -315,20 +339,17 @@ with mp_hands.Hands(
                 )
                 yellow_state = gesture_alt_tab_repeat(yellow, yellow_state)
 
-                # THUMB TIP GESTURE
+                # THUMB TIP
                 thumb_active = gesture_thumb_tip(image, l)
-
-                # --------------------------
-                # NEW: Arrow Up once on thumb raise
-                # --------------------------
                 if thumb_active and not thumb_state["active"]:
                     pyg.press("up")
                     thumb_state["pressed"] = True
-
                 thumb_state["active"] = thumb_active
                 if not thumb_active:
                     thumb_state["pressed"] = False
-                # --------------------------
+
+                # PEACE SIGN SHOW WHITE
+                peace_active = gesture_peace_sign_show(image, l)
 
                 # HOLD / DRAG
                 if blue_click:
@@ -351,7 +372,7 @@ with mp_hands.Hands(
                 prev_x, prev_y = handle_gesture_actions(
                     image, x8, y8,
                     inside, blue_click,
-                    box, prev_x, prev_y, yellow or thumb_active  # suppress green if yellow or thumb active
+                    box, prev_x, prev_y, yellow or thumb_active or peace_active
                 )
 
         cv2.imshow(WINDOW_NAME, cv2.flip(image, 1))
