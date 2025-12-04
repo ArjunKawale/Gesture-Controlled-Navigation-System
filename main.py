@@ -55,18 +55,28 @@ def draw_overlay_box(image, box):
 # -----------------------------------------------------
 # MAP TO SCREEN WITH SMOOTHING
 # -----------------------------------------------------
-def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state, SMOOTHING=0.7):
+def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state,
+                  SMOOTHING=0.7, SENSITIVITY=1.4):
     box_left, box_top, box_right, box_bottom = box
     prev_x, prev_y = smoothing_state
 
     norm_x = (x - box_left) / (box_right - box_left)
     norm_y = (y - box_top) / (box_bottom - box_top)
 
-    norm_x = 1 - norm_x  # flip horizontally
+    norm_x = 1 - norm_x  # flip
 
+    # BASE target positions
     target_x = int(norm_x * screen_w)
     target_y = int(norm_y * screen_h)
 
+    # APPLY SENSITIVITY (adjust movement relative to center)
+    center_x = screen_w // 2
+    center_y = screen_h // 2
+
+    target_x = int(center_x + (target_x - center_x) * SENSITIVITY)
+    target_y = int(center_y + (target_y - center_y) * SENSITIVITY)
+
+    # smoothing
     if prev_x is None:
         return target_x, target_y, (target_x, target_y)
 
