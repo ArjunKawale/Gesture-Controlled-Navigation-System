@@ -33,7 +33,7 @@ def maintain_window(window_name):
         )
 
 # -----------------------------------------------------
-# DRAW OVERLAY + BOUNDING BOX
+# DRAW OVERLAY BOX
 # -----------------------------------------------------
 def draw_overlay_box(image, box):
     (box_left, box_top, box_right, box_bottom) = box
@@ -64,18 +64,15 @@ def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state,
 
     norm_x = 1 - norm_x  # flip horizontally
 
-    # BASE target positions
     target_x = int(norm_x * screen_w)
     target_y = int(norm_y * screen_h)
 
-    # APPLY SENSITIVITY (adjust movement relative to center)
     center_x = screen_w // 2
     center_y = screen_h // 2
 
     target_x = int(center_x + (target_x - center_x) * SENSITIVITY)
     target_y = int(center_y + (target_y - center_y) * SENSITIVITY)
 
-    # smoothing
     if prev_x is None:
         return target_x, target_y, (target_x, target_y)
 
@@ -85,56 +82,71 @@ def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state,
     return smooth_x, smooth_y, (smooth_x, smooth_y)
 
 # -----------------------------------------------------
-# LEFT CLICK FUNCTION (GESTURE-SPECIFIC)
+# LEFT CLICK GESTURE
 # -----------------------------------------------------
 def gesture_left_click(image, x8, y8, x12, y12,
                        y16, y20, y7,
                        click_state):
 
-    # Detect left click gesture (blue_click logic)
     blue_click = (
         y8 < y16 and y8 < y20 and
         y12 < y16 and y12 < y20 and
         y12 < y7
     )
 
-    # Draw circles for visual feedback
     if blue_click:
         cv2.circle(image, (x8, y8), 10, (255, 0, 0), -1)
         cv2.circle(image, (x12, y12), 10, (255, 0, 0), -1)
 
-        # Click only once
         if not click_state:
             pyg.click()
             click_state = True
-
     else:
         click_state = False
 
     return click_state, blue_click
 
 # -----------------------------------------------------
-# HOLD GESTURE FUNCTION
+# HOLD GESTURE (DRAG MODE)
 # -----------------------------------------------------
-def gesture_hold(image, x8, y8, x12, y12):
-    # purple color (BGR)
+def gesture_hold(image, x8, y8, x12, y12,
+                 box, prev_x, prev_y,
+                 hold_state):
+
     PURPLE = (255, 0, 255)
     cv2.circle(image, (x8, y8), 15, PURPLE, -1)
     cv2.circle(image, (x12, y12), 15, PURPLE, -1)
 
+    sw, sh = pyg.size()
+
+    mapped_x, mapped_y, (prev_x, prev_y) = map_to_screen(
+        x8, y8, box, sw, sh, (prev_x, prev_y),
+        SMOOTHING=0.6,
+        SENSITIVITY=1.2
+    )
+
+    # mouseDown once
+    if not hold_state["down_sent"]:
+        pyg.mouseDown()
+        hold_state["down_sent"] = True
+        hold_state["active"] = True
+
+    # move while dragging
+    pyg.moveTo(mapped_x, mapped_y)
+
+    return prev_x, prev_y, hold_state
+
 # -----------------------------------------------------
-# HANDLE GENERAL GESTURES (movement etc.)
+# NORMAL CURSOR MOVEMENT
 # -----------------------------------------------------
 def handle_gesture_actions(image, x8, y8,
                            inside, blue_click,
                            box, prev_x, prev_y):
 
-    # Color indicator
     col = (0, 255, 0) if inside else (0, 0, 255)
     if not blue_click:
         cv2.circle(image, (x8, y8), 8, col, -1)
 
-    # Move cursor
     if inside and not blue_click:
         sw, sh = pyg.size()
         mapped_x, mapped_y, (prev_x, prev_y) = map_to_screen(
@@ -151,7 +163,8 @@ cap = cv2.VideoCapture(0)
 prev_x, prev_y = None, None
 click_state = False
 hold_start_time = None
-is_holding = False
+
+hold_state = {"active": False, "down_sent": False}
 
 WINDOW_NAME = "Gesture Mouse"
 cv2.namedWindow(WINDOW_NAME)
@@ -199,25 +212,32 @@ with mp_hands.Hands(
 
                 inside = (box[0] < x8 < box[2] and box[1] < y8 < box[3])
 
-                # ----- LEFT CLICK GESTURE -----
                 click_state, blue_click = gesture_left_click(
                     image, x8, y8, x12, y12,
                     y16, y20, y7,
                     click_state
                 )
 
-                # ----- HOLD GESTURE LOGIC -----
+                # ---------------- HOLD LOGIC ----------------
                 if blue_click:
                     if hold_start_time is None:
                         hold_start_time = time.time()
-                    elif (time.time() - hold_start_time) > 1:
-                        is_holding = True
-                        gesture_hold(image, x8, y8, x12, y12)
-                else:
-                    hold_start_time = None
-                    is_holding = False
 
-                # ----- MOVEMENT LOGIC -----
+                    elif (time.time() - hold_start_time) > 1:
+                        prev_x, prev_y, hold_state = gesture_hold(
+                            image, x8, y8, x12, y12,
+                            box, prev_x, prev_y,
+                            hold_state
+                        )
+                        continue  # skip normal movement this frame
+                else:
+                    if hold_state["active"]:
+                        pyg.mouseUp()
+
+                    hold_state = {"active": False, "down_sent": False}
+                    hold_start_time = None
+
+                # ---------------- MOVEMENT ----------------
                 prev_x, prev_y = handle_gesture_actions(
                     image, x8, y8,
                     inside, blue_click,
