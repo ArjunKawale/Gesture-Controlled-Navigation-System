@@ -15,7 +15,6 @@ def maintain_window(window_name):
     if not hwnd:
         return
 
-    # Always-on-top
     ctypes.windll.user32.SetWindowPos(
         hwnd,
         win32con.HWND_TOPMOST,
@@ -23,7 +22,6 @@ def maintain_window(window_name):
         win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
     )
 
-    # If it loses focus, bring it back
     fg = win32gui.GetForegroundWindow()
     if fg != hwnd:
         win32gui.SetWindowPos(
@@ -64,18 +62,71 @@ def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state, SMOOTHING=0.7)
     norm_x = (x - box_left) / (box_right - box_left)
     norm_y = (y - box_top) / (box_bottom - box_top)
 
-    norm_x = 1 - norm_x  # flip
+    norm_x = 1 - norm_x  # flip horizontally
 
     target_x = int(norm_x * screen_w)
     target_y = int(norm_y * screen_h)
 
     if prev_x is None:
-        prev_x, prev_y = target_x, target_y
+        return target_x, target_y, (target_x, target_y)
 
     smooth_x = int(prev_x * SMOOTHING + target_x * (1 - SMOOTHING))
     smooth_y = int(prev_y * SMOOTHING + target_y * (1 - SMOOTHING))
 
     return smooth_x, smooth_y, (smooth_x, smooth_y)
+
+
+# -----------------------------------------------------
+# LEFT CLICK FUNCTION (GESTURE-SPECIFIC)
+# -----------------------------------------------------
+def gesture_left_click(image, x8, y8, x12, y12,
+                       y16, y20, y7,
+                       click_state):
+
+    # Detect left click gesture (blue_click logic)
+    blue_click = (
+        y8 < y16 and y8 < y20 and
+        y12 < y16 and y12 < y20 and
+        y12 < y7
+    )
+
+    # Draw circles for visual feedback
+    if blue_click:
+        cv2.circle(image, (x8, y8), 10, (255, 0, 0), -1)
+        cv2.circle(image, (x12, y12), 10, (255, 0, 0), -1)
+
+        # Click only once
+        if not click_state:
+            pyg.click()
+            click_state = True
+
+    else:
+        click_state = False
+
+    return click_state, blue_click
+
+
+# -----------------------------------------------------
+# HANDLE GENERAL GESTURES (movement etc.)
+# -----------------------------------------------------
+def handle_gesture_actions(image, x8, y8,
+                           inside, blue_click,
+                           box, prev_x, prev_y):
+
+    # Color indicator
+    col = (0, 255, 0) if inside else (0, 0, 255)
+    if not blue_click:
+        cv2.circle(image, (x8, y8), 8, col, -1)
+
+    # Move cursor
+    if inside and not blue_click:
+        sw, sh = pyg.size()
+        mapped_x, mapped_y, (prev_x, prev_y) = map_to_screen(
+            x8, y8, box, sw, sh, (prev_x, prev_y)
+        )
+        pyg.moveTo(mapped_x, mapped_y)
+
+    return prev_x, prev_y
 
 
 # -----------------------------------------------------
@@ -101,7 +152,6 @@ with mp_hands.Hands(
 
         h, w, _ = image.shape
 
-        # Dynamic bounding box
         box = (
             int(0.01 * w),
             int(0.01 * h),
@@ -109,13 +159,11 @@ with mp_hands.Hands(
             int(0.80 * h)
         )
 
-        # Process hand
         image.flags.writeable = False
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         results = hands.process(rgb)
         image.flags.writeable = True
 
-        # Shaded overlay + green border
         image = draw_overlay_box(image, box)
 
         if results.multi_hand_landmarks:
@@ -134,42 +182,23 @@ with mp_hands.Hands(
 
                 inside = (box[0] < x8 < box[2] and box[1] < y8 < box[3])
 
-                # Blue click gesture
-                blue_click = (
-                    y8 < y16 and y8 < y20 and
-                    y12 < y16 and y12 < y20 and
-                    y12 < y7
+                # ----- LEFT CLICK GESTURE -----
+                click_state, blue_click = gesture_left_click(
+                    image, x8, y8, x12, y12,
+                    y16, y20, y7,
+                    click_state
                 )
 
-                # Colors
-                if blue_click:
-                    cv2.circle(image, (x8, y8), 10, (255, 0, 0), -1)
-                    cv2.circle(image, (x12, y12), 10, (255, 0, 0), -1)
-                else:
-                    col = (0, 255, 0) if inside else (0, 0, 255)
-                    cv2.circle(image, (x8, y8), 8, col, -1)
+                # ----- MOVEMENT LOGIC -----
+                prev_x, prev_y = handle_gesture_actions(
+                    image, x8, y8,
+                    inside, blue_click,
+                    box, prev_x, prev_y
+                )
 
-                # Movement
-                if inside and not blue_click:
-                    sw, sh = pyg.size()
-                    mapped_x, mapped_y, (prev_x, prev_y) = map_to_screen(
-                        x8, y8, box, sw, sh, (prev_x, prev_y)
-                    )
-                    pyg.moveTo(mapped_x, mapped_y)
-
-                # Clicking
-                if blue_click and not click_state:
-                    pyg.click()
-                    click_state = True
-
-                if not blue_click:
-                    click_state = False
-
-        # Display & keep window in front
         cv2.imshow(WINDOW_NAME, cv2.flip(image, 1))
         maintain_window(WINDOW_NAME)
 
-        # ESC to quit
         if cv2.waitKey(5) & 0xFF == 27:
             break
 
