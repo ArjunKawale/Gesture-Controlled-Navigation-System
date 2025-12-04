@@ -4,6 +4,7 @@ import pyautogui as pyg
 import ctypes
 import win32gui
 import win32con
+import time
 
 mp_hands = mp.solutions.hands
 
@@ -31,7 +32,6 @@ def maintain_window(window_name):
             win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
         )
 
-
 # -----------------------------------------------------
 # DRAW OVERLAY + BOUNDING BOX
 # -----------------------------------------------------
@@ -51,7 +51,6 @@ def draw_overlay_box(image, box):
     cv2.rectangle(image, (box_left, box_top), (box_right, box_bottom), (0, 255, 0), 2)
     return image
 
-
 # -----------------------------------------------------
 # MAP TO SCREEN WITH SMOOTHING
 # -----------------------------------------------------
@@ -63,7 +62,7 @@ def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state,
     norm_x = (x - box_left) / (box_right - box_left)
     norm_y = (y - box_top) / (box_bottom - box_top)
 
-    norm_x = 1 - norm_x  # flip
+    norm_x = 1 - norm_x  # flip horizontally
 
     # BASE target positions
     target_x = int(norm_x * screen_w)
@@ -84,7 +83,6 @@ def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state,
     smooth_y = int(prev_y * SMOOTHING + target_y * (1 - SMOOTHING))
 
     return smooth_x, smooth_y, (smooth_x, smooth_y)
-
 
 # -----------------------------------------------------
 # LEFT CLICK FUNCTION (GESTURE-SPECIFIC)
@@ -115,6 +113,14 @@ def gesture_left_click(image, x8, y8, x12, y12,
 
     return click_state, blue_click
 
+# -----------------------------------------------------
+# HOLD GESTURE FUNCTION
+# -----------------------------------------------------
+def gesture_hold(image, x8, y8, x12, y12):
+    # purple color (BGR)
+    PURPLE = (255, 0, 255)
+    cv2.circle(image, (x8, y8), 15, PURPLE, -1)
+    cv2.circle(image, (x12, y12), 15, PURPLE, -1)
 
 # -----------------------------------------------------
 # HANDLE GENERAL GESTURES (movement etc.)
@@ -138,13 +144,14 @@ def handle_gesture_actions(image, x8, y8,
 
     return prev_x, prev_y
 
-
 # -----------------------------------------------------
 # MAIN PROGRAM
 # -----------------------------------------------------
 cap = cv2.VideoCapture(0)
 prev_x, prev_y = None, None
 click_state = False
+hold_start_time = None
+is_holding = False
 
 WINDOW_NAME = "Gesture Mouse"
 cv2.namedWindow(WINDOW_NAME)
@@ -198,6 +205,17 @@ with mp_hands.Hands(
                     y16, y20, y7,
                     click_state
                 )
+
+                # ----- HOLD GESTURE LOGIC -----
+                if blue_click:
+                    if hold_start_time is None:
+                        hold_start_time = time.time()
+                    elif (time.time() - hold_start_time) > 1:
+                        is_holding = True
+                        gesture_hold(image, x8, y8, x12, y12)
+                else:
+                    hold_start_time = None
+                    is_holding = False
 
                 # ----- MOVEMENT LOGIC -----
                 prev_x, prev_y = handle_gesture_actions(
