@@ -3,19 +3,34 @@ import mediapipe as mp
 import pyautogui as pyg
 import ctypes
 import win32gui
+import win32con
 
 mp_hands = mp.solutions.hands
 
-
 # -----------------------------------------------------
-# MAKE WINDOW ALWAYS ON TOP
+# WINDOW CONTROLLER: keep topmost + regain focus
 # -----------------------------------------------------
-def make_window_topmost(window_name):
+def maintain_window(window_name):
     hwnd = win32gui.FindWindow(None, window_name)
-    if hwnd:
-        ctypes.windll.user32.SetWindowPos(
-            hwnd, -1, 0, 0, 0, 0,
-            0x0001 | 0x0002   # NOSIZE | NOMOVE
+    if not hwnd:
+        return
+
+    # Always-on-top
+    ctypes.windll.user32.SetWindowPos(
+        hwnd,
+        win32con.HWND_TOPMOST,
+        0, 0, 0, 0,
+        win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
+    )
+
+    # If it loses focus, bring it back
+    fg = win32gui.GetForegroundWindow()
+    if fg != hwnd:
+        win32gui.SetWindowPos(
+            hwnd,
+            win32con.HWND_TOPMOST,
+            0, 0, 0, 0,
+            win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
         )
 
 
@@ -35,10 +50,8 @@ def draw_overlay_box(image, box):
     cv2.rectangle(overlay, (box_right, box_top), (w, box_bottom), (128, 128, 128), -1)
 
     image = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
-
     cv2.rectangle(image, (box_left, box_top), (box_right, box_bottom), (0, 255, 0), 2)
     return image
-
 
 
 # -----------------------------------------------------
@@ -51,7 +64,7 @@ def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state, SMOOTHING=0.7)
     norm_x = (x - box_left) / (box_right - box_left)
     norm_y = (y - box_top) / (box_bottom - box_top)
 
-    norm_x = 1 - norm_x  # horizontal flip
+    norm_x = 1 - norm_x  # flip
 
     target_x = int(norm_x * screen_w)
     target_y = int(norm_y * screen_h)
@@ -65,16 +78,15 @@ def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state, SMOOTHING=0.7)
     return smooth_x, smooth_y, (smooth_x, smooth_y)
 
 
-
 # -----------------------------------------------------
 # MAIN PROGRAM
 # -----------------------------------------------------
 cap = cv2.VideoCapture(0)
-
 prev_x, prev_y = None, None
-click_state = False   # avoid repeated clicks
+click_state = False
 
 WINDOW_NAME = "Gesture Mouse"
+cv2.namedWindow(WINDOW_NAME)
 
 with mp_hands.Hands(
     model_complexity=0,
@@ -90,16 +102,11 @@ with mp_hands.Hands(
         h, w, _ = image.shape
 
         # Dynamic bounding box
-        TOP_MARGIN = int(0.01 * h)
-        LEFT_MARGIN = int(0.01 * w)
-        RIGHT_MARGIN = int(0.01 * w)
-        BOTTOM_MARGIN = int(0.20 * h)
-
         box = (
-            LEFT_MARGIN,
-            TOP_MARGIN,
-            w - RIGHT_MARGIN,
-            h - BOTTOM_MARGIN
+            int(0.01 * w),
+            int(0.01 * h),
+            int(0.99 * w),
+            int(0.80 * h)
         )
 
         # Process hand
@@ -108,57 +115,41 @@ with mp_hands.Hands(
         results = hands.process(rgb)
         image.flags.writeable = True
 
-        # Draw shaded area + green box
+        # Shaded overlay + green border
         image = draw_overlay_box(image, box)
 
-        # Hand detected?
         if results.multi_hand_landmarks:
             for hand in results.multi_hand_landmarks:
-                # Landmarks
                 l8  = hand.landmark[8]
                 l12 = hand.landmark[12]
                 l16 = hand.landmark[16]
                 l20 = hand.landmark[20]
                 l7  = hand.landmark[7]
 
-                x8,  y8  = int(l8.x  * w), int(l8.y  * h)
+                x8,  y8  = int(l8.x * w), int(l8.y * h)
                 x12, y12 = int(l12.x * w), int(l12.y * h)
                 y16 = int(l16.y * h)
                 y20 = int(l20.y * h)
-                y7  = int(l7.y  * h)
+                y7  = int(l7.y * h)
 
                 inside = (box[0] < x8 < box[2] and box[1] < y8 < box[3])
 
-                # ---------------------------------------------------
-                # GESTURE: BLUE = CLICK
-                # Conditions:
-                # 1. 8 above 16 & 20
-                # 2. 12 above 16 & 20
-                # 3. 12 above 7
-                # ---------------------------------------------------
+                # Blue click gesture
                 blue_click = (
-                    y8  < y16 and y8  < y20 and
+                    y8 < y16 and y8 < y20 and
                     y12 < y16 and y12 < y20 and
                     y12 < y7
                 )
 
-                # ---------------------------------------------------
-                # DRAW LANDMARK COLORS
-                # ---------------------------------------------------
+                # Colors
                 if blue_click:
-                    cv2.circle(image, (x8, y8),  10, (255, 0, 0), -1)
+                    cv2.circle(image, (x8, y8), 10, (255, 0, 0), -1)
                     cv2.circle(image, (x12, y12), 10, (255, 0, 0), -1)
                 else:
-                    if inside:
-                        cv2.circle(image, (x8, y8), 8, (0, 255, 0), -1)
-                    else:
-                        cv2.circle(image, (x8, y8), 8, (0, 0, 255), -1)
+                    col = (0, 255, 0) if inside else (0, 0, 255)
+                    cv2.circle(image, (x8, y8), 8, col, -1)
 
-
-
-                # ---------------------------------------------------
-                # MOUSE MOVEMENT (DISABLED IN BLUE GESTURE)
-                # ---------------------------------------------------
+                # Movement
                 if inside and not blue_click:
                     sw, sh = pyg.size()
                     mapped_x, mapped_y, (prev_x, prev_y) = map_to_screen(
@@ -166,11 +157,7 @@ with mp_hands.Hands(
                     )
                     pyg.moveTo(mapped_x, mapped_y)
 
-
-
-                # ---------------------------------------------------
-                # LEFT CLICK (ONLY ON BLUE)
-                # ---------------------------------------------------
+                # Clicking
                 if blue_click and not click_state:
                     pyg.click()
                     click_state = True
@@ -178,15 +165,13 @@ with mp_hands.Hands(
                 if not blue_click:
                     click_state = False
 
-
-
-        # Show output
+        # Display & keep window in front
         cv2.imshow(WINDOW_NAME, cv2.flip(image, 1))
-        make_window_topmost(WINDOW_NAME)   # ALWAYS on top
+        maintain_window(WINDOW_NAME)
 
+        # ESC to quit
         if cv2.waitKey(5) & 0xFF == 27:
             break
-
 
 cap.release()
 cv2.destroyAllWindows()
