@@ -232,7 +232,7 @@ def gesture_thumb_tip(image, l):
     return False
 
 # -----------------------------------------------------
-# PEACE SIGN SHOW WHITE
+# PEACE SIGN SHOW WHITE + PRESS ENTER ONCE
 # -----------------------------------------------------
 def gesture_peace_sign_show(image, l, min_angle=25):
     h, w, _ = image.shape
@@ -242,6 +242,7 @@ def gesture_peace_sign_show(image, l, min_angle=25):
     x6, y6 = int(l[6].x * w), int(l[6].y * h)
     x10, y10 = int(l[10].x * w), int(l[10].y * h)
 
+    # Both fingers raised above second joint
     if y8 < y6 and y12 < y10:
         v_index = (x8 - x6, y8 - y6)
         v_middle = (x12 - x10, y12 - y10)
@@ -272,6 +273,7 @@ hold_start_time = None
 yellow_state = {"active": False, "last_time": None}
 hold_state = {"active": False, "down_sent": False}
 thumb_state = {"active": False, "pressed": False}
+peace_state = {"active": False, "pressed": False}
 
 WINDOW_NAME = "Gesture Mouse"
 cv2.namedWindow(WINDOW_NAME)
@@ -348,8 +350,14 @@ with mp_hands.Hands(
                 if not thumb_active:
                     thumb_state["pressed"] = False
 
-                # PEACE SIGN SHOW WHITE
+                # PEACE SIGN SHOW WHITE + PRESS ENTER ONCE
                 peace_active = gesture_peace_sign_show(image, l)
+                if peace_active and not peace_state["active"]:
+                    pyg.press("enter")
+                    peace_state["pressed"] = True
+                peace_state["active"] = peace_active
+                if not peace_active:
+                    peace_state["pressed"] = False
 
                 # HOLD / DRAG
                 if blue_click:
