@@ -6,7 +6,6 @@ import ctypes
 import win32gui
 import win32con
 import time
-import math
 
 mp_hands = mp.solutions.hands
 
