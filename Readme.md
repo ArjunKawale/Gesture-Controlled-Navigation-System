@@ -45,21 +45,29 @@ This project works **only on Windows** and is currently **optimized for 1920x108
 ## Steps to Run
 
 1. Ensure Python 3.8+ is installed.  
-2. Install dependencies by running:
+2. Clone this repository:
+    ```bash
+    git clone https://github.com/your-username/gesture-mouse.git
+    cd gesture-mouse
+    ```
+3. (Optional) Pull the latest updates if you already have the repo:
+    ```bash
+    git pull
+    ```
+4. Install dependencies:
     ```bash
     pip install -r requirements.txt
     ```
-3. Ensure you have a working webcam.  
-4. Run the main script:
+5. Ensure you have a working webcam.  
+6. Run the main script:
     ```bash
     python main.py
     ```
-5. Wait for the countdown and start performing gestures inside the green bounding box.  
-6. Press `Esc` to exit at any time.  
+7. Wait for the countdown and start performing gestures inside the green bounding box.  
+8. Press `Esc` to exit at any time.  
    - If `Esc` doesn't work, you can **Alt+Tab** to the gesture window and press `Esc`, close the IDE running Python, or use keyboard interrupts in the terminal.  
 
 ---
-
 ## Requirements
 
 - **OpenCV** – for video capture and overlay graphics.  
@@ -93,3 +101,4 @@ All dependencies are listed in `requirements.txt`.
 ## Disclaimer
 
 This is a **fun, experimental project** for personal use. Accuracy may vary depending on lighting, background, and hand position. Works **only on Windows**.
+
