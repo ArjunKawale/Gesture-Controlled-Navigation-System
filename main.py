@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 import pyautogui as pyg
+
 import ctypes
 import win32gui
 import win32con
@@ -9,40 +10,63 @@ import math
 
 mp_hands = mp.solutions.hands
 
-# -----------------------------------------------------
-# MAKE WINDOW INVISIBLE (OBS CAN STILL CAPTURE)
-# -----------------------------------------------------
-def make_window_invisible(hwnd):
-    # add layered style
-    style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-    win32gui.SetWindowLong(
-        hwnd,
-        win32con.GWL_EXSTYLE,
-        style | win32con.WS_EX_LAYERED
-    )
-
-    # full transparency (0 opacity)
-    ctypes.windll.user32.SetLayeredWindowAttributes(
-        hwnd, 0, 0, win32con.LWA_ALPHA
-    )
+# ============================
+#  WINDOW VISIBILITY TOGGLE
+# ============================
+WINDOW_VISIBLE = True  # <---- SET True TO SHOW, False TO HIDE
 
 
 # -----------------------------------------------------
-# WINDOW CONTROLLER
+#  SET WINDOW VISIBILITY  (NEW)
 # -----------------------------------------------------
-def maintain_window(window_name):
-    hwnd = win32gui.FindWindow(None, window_name)
-    if not hwnd:
-        return
+def set_window_visibility(hwnd, visible):
+    if visible:
+        style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+        style = style & ~win32con.WS_EX_LAYERED
+        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, style)
+
+        ctypes.windll.user32.SetLayeredWindowAttributes(
+            hwnd, 0, 255, win32con.LWA_ALPHA
+        )
+    else:
+        style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+        win32gui.SetWindowLong(
+            hwnd,
+            win32con.GWL_EXSTYLE,
+            style | win32con.WS_EX_LAYERED
+        )
+
+        ctypes.windll.user32.SetLayeredWindowAttributes(
+            hwnd, 0, 0, win32con.LWA_ALPHA
+        )
+
+
+# -----------------------------------------------------
+# WINDOW CONTROLLER  (TOPMOST REMOVED)
+# -----------------------------------------------------
+def send_window_to_background(hwnd):
     ctypes.windll.user32.SetWindowPos(
-        hwnd, win32con.HWND_TOPMOST,
+        hwnd,
+        win32con.HWND_BOTTOM,
         0, 0, 0, 0,
-        win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
+        win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE
     )
 
+def maintain_window(window_name):
+    # If window is visible, do NOT push it to background
+    if WINDOW_VISIBLE:
+        return
+
+    hwnd = win32gui.FindWindow(None, window_name)
+    if hwnd:
+        send_window_to_background(hwnd)
+
+
+
 # -----------------------------------------------------
-# DRAW OVERLAY BOX
+# REST OF YOUR CODE (UNCHANGED)
 # -----------------------------------------------------
+
 def draw_overlay_box(image, box):
     (box_left, box_top, box_right, box_bottom) = box
     h, w, _ = image.shape
@@ -59,9 +83,7 @@ def draw_overlay_box(image, box):
     cv2.rectangle(image, (box_left, box_top), (box_right, box_bottom), (0, 255, 0), 2)
     return image
 
-# -----------------------------------------------------
-# MAP TO SCREEN
-# -----------------------------------------------------
+
 def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state,
                   SMOOTHING=0.7, SENSITIVITY=1.4):
 
@@ -89,9 +111,7 @@ def map_to_screen(x, y, box, screen_w, screen_h, smoothing_state,
 
     return smooth_x, smooth_y, (smooth_x, smooth_y)
 
-# -----------------------------------------------------
-# LEFT CLICK GESTURE
-# -----------------------------------------------------
+
 def gesture_left_click(image, x8, y8, x12, y12, y16, y20, y7, click_state):
     blue_click = (
         y8 < y16 and y8 < y20 and
@@ -111,9 +131,6 @@ def gesture_left_click(image, x8, y8, x12, y12, y16, y20, y7, click_state):
     return click_state, blue_click
 
 
-# -----------------------------------------------------
-# HOLD (DRAG)
-# -----------------------------------------------------
 def gesture_hold(image, x8, y8, x12, y12, box, prev_x, prev_y, hold_state):
     PURPLE = (255, 0, 255)
     cv2.circle(image, (x8, y8), 15, PURPLE, -1)
@@ -134,9 +151,6 @@ def gesture_hold(image, x8, y8, x12, y12, box, prev_x, prev_y, hold_state):
     return prev_x, prev_y, hold_state
 
 
-# -----------------------------------------------------
-# NORMAL MOVEMENT
-# -----------------------------------------------------
 def handle_gesture_actions(image, x8, y8, inside, blue_click, box, prev_x, prev_y, suppress_green=False):
 
     if not blue_click and not suppress_green:
@@ -153,9 +167,6 @@ def handle_gesture_actions(image, x8, y8, inside, blue_click, box, prev_x, prev_
     return prev_x, prev_y
 
 
-# -----------------------------------------------------
-# YELLOW (ALT+TAB)
-# -----------------------------------------------------
 def gesture_yellow(image, pts):
 
     y8 = pts["y8"]
@@ -183,46 +194,28 @@ def gesture_yellow(image, pts):
 
 
 def gesture_alt_tab_hardcoded(yellow, state):
-    """
-    STABLE ALT+TAB (hold to activate, repeat cleanly)
-    state = {
-        "active": False,         # Currently inside Alt+Tab mode?
-        "last_time": None,       # Last repeat timestamp
-        "start_hold": None       # For initial delay
-    }
-    """
 
-    # ---------------------------------
-    # 1) Gesture ended → EXIT Alt+Tab
-    # ---------------------------------
     if not yellow:
         if state["active"]:
-            pyg.keyUp("alt")  # release alt safely
+            pyg.keyUp("alt")
         state["active"] = False
         state["last_time"] = None
         state["start_hold"] = None
         return state
 
-    # ---------------------------------
-    # 2) Gesture is on: start initial hold timer
-    # ---------------------------------
     if state["start_hold"] is None:
         state["start_hold"] = time.time()
         return state
 
-    # Must hold for 0.25 sec to activate Alt+Tab
     if not state["active"]:
         if time.time() - state["start_hold"] >= 0.25:
-            pyg.keyDown("alt")       # hold alt
-            pyg.keyDown("tab")       # cycle once
+            pyg.keyDown("alt")
+            pyg.keyDown("tab")
             pyg.keyUp("tab")
             state["active"] = True
             state["last_time"] = time.time()
         return state
 
-    # ---------------------------------
-    # 3) Already active → repeat every 0.5 sec
-    # ---------------------------------
     now = time.time()
     if now - state["last_time"] >= 0.5:
         pyg.keyDown("tab")
@@ -232,13 +225,6 @@ def gesture_alt_tab_hardcoded(yellow, state):
     return state
 
 
-
-
-
-
-# -----------------------------------------------------
-# THUMB TIP → UP
-# -----------------------------------------------------
 def gesture_thumb_tip(image, l):
     y4 = int(l[4].y * image.shape[0])
 
@@ -259,40 +245,48 @@ def gesture_thumb_tip(image, l):
         return True
     return False
 
-# -----------------------------------------------------
-# PEACE SIGN → ENTER
-# -----------------------------------------------------
-def gesture_peace_sign_show(image, l, min_angle=25):
+
+# -----------------------------
+# NEW ENTER KEY GESTURE
+# -----------------------------
+def gesture_enter_condition(image, l):
     h, w, _ = image.shape
-    x8, y8 = int(l[8].x * w), int(l[8].y * h)
-    x12, y12 = int(l[12].x * w), int(l[12].y * h)
-    x6, y6 = int(l[6].x * w), int(l[6].y * h)
-    x10, y10 = int(l[10].x * w), int(l[10].y * h)
 
-    if y8 < y6 and y12 < y10:
-        v1 = (x8 - x6, y8 - y6)
-        v2 = (x12 - x10, y12 - y10)
+    x5, y5   = int(l[5].x * w), int(l[5].y * h)
+    x9, y9   = int(l[9].x * w), int(l[9].y * h)
+    x13, y13 = int(l[13].x * w), int(l[13].y * h)
+    x17, y17 = int(l[17].x * w), int(l[17].y * h)
 
-        dot = v1[0]*v2[0] + v1[1]*v2[1]
-        m1 = math.hypot(*v1)
-        m2 = math.hypot(*v2)
+    y1 = int(l[1].y * h)
+    y2 = int(l[2].y * h)
+    y3 = int(l[3].y * h)
+    y4 = int(l[4].y * h)
 
-        if m1 == 0 or m2 == 0:
-            return False
+    y8  = int(l[8].y * h)
+    y12 = int(l[12].y * h)
+    y16 = int(l[16].y * h)
+    y20 = int(l[20].y * h)
 
-        angle = math.degrees(math.acos(max(min(dot/(m1*m2),1),-1)))
+    cond = (
+        y5 < min(y1, y2, y3, y4, y8, y12, y16, y20) and
+        y9 < min(y1, y2, y3, y4, y8, y12, y16, y20) and
+        y13 < min(y1, y2, y3, y4, y8, y12, y16, y20) and
+        y17 < min(y1, y2, y3, y4, y8, y12, y16, y20)
+    )
 
-        if angle >= min_angle:
-            cv2.circle(image, (x8, y8), 10, (255,255,255), -1)
-            cv2.circle(image, (x12, y12), 10, (255,255,255), -1)
-            return True
+    if cond:
+        BLACK = (0, 0, 0)
+        for x, y in [(x5, y5), (x9, y9), (x13, y13), (x17, y17)]:
+            cv2.circle(image, (x, y), 10, BLACK, -1)
 
-    return False
+    return cond
 
-# -----------------------------------------------------
-# MAIN PROGRAM
 
-# -----------------------------------------------------
+
+# ============================
+# BEGIN RUNTIME
+# ============================
+
 cap = cv2.VideoCapture(0)
 
 prev_x, prev_y = None, None
@@ -303,28 +297,25 @@ hold_start_time = None
 yellow_state = {"active": False, "last_time": None}
 hold_state = {"active": False, "down_sent": False}
 thumb_state = {"active": False, "pressed": False}
-peace_state = {"active": False, "pressed": False}
+enter_state = {"active": False, "pressed": False}
 
 WINDOW_NAME = "Gesture Mouse"
 cv2.namedWindow(WINDOW_NAME)
 cv2.resizeWindow(WINDOW_NAME, 1, 1)
 cv2.moveWindow(WINDOW_NAME, 0, 0)
 
-# ---- make invisible ----
 hwnd = win32gui.FindWindow(None, WINDOW_NAME)
-make_window_invisible(hwnd)
 
-# Recorder
+# APPLY VISIBILITY TOGGLE  ---------------------------
+set_window_visibility(hwnd, WINDOW_VISIBLE)
+# ----------------------------------------------------
+
 fourcc = cv2.VideoWriter_fourcc(*'XVID')
 frame_width = int(cap.get(3))
 frame_height = int(cap.get(4))
 
-
 out = cv2.VideoWriter("gesture_record.avi", fourcc, 20.0, (frame_width, frame_height))
 
-
-
-# Countdown
 start_time = time.time()
 COUNTDOWN_DURATION = 5
 
@@ -410,7 +401,6 @@ with mp_hands.Hands(
                 )
                 yellow_state = gesture_alt_tab_hardcoded(yellow, yellow_state)
 
-
                 thumb_active = gesture_thumb_tip(image, l)
                 if thumb_active and not thumb_state["active"]:
                     pyg.press("up")
@@ -419,13 +409,13 @@ with mp_hands.Hands(
                 if not thumb_active:
                     thumb_state["pressed"] = False
 
-                peace_active = gesture_peace_sign_show(image, l)
-                if peace_active and not peace_state["active"]:
+                enter_active = gesture_enter_condition(image, l)
+                if enter_active and not enter_state["active"]:
                     pyg.press("enter")
-                    peace_state["pressed"] = True
-                peace_state["active"] = peace_active
-                if not peace_active:
-                    peace_state["pressed"] = False
+                    enter_state["pressed"] = True
+                enter_state["active"] = enter_active
+                if not enter_active:
+                    enter_state["pressed"] = False
 
                 if blue_click:
                     if hold_start_time is None:
@@ -447,15 +437,15 @@ with mp_hands.Hands(
                     image, x8, y8,
                     inside, blue_click,
                     box, prev_x, prev_y,
-                    yellow or thumb_active or peace_active
+                    yellow or thumb_active or enter_active
                 )
 
         out.write(image)
 
         cv2.imshow(WINDOW_NAME, cv2.flip(image, 1))
-        if not yellow_state["active"]:
-                 maintain_window(WINDOW_NAME)
 
+        if not yellow_state["active"]:
+            maintain_window(WINDOW_NAME)
 
         if cv2.waitKey(5) & 0xFF == 27:
             break
