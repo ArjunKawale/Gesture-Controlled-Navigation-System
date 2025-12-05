@@ -183,31 +183,51 @@ def gesture_yellow(image, pts):
 
 
 def gesture_alt_tab_hardcoded(yellow, state):
-    now = time.time()
+    """
+    STABLE ALT+TAB (hold to activate, repeat cleanly)
+    state = {
+        "active": False,         # Currently inside Alt+Tab mode?
+        "last_time": None,       # Last repeat timestamp
+        "start_hold": None       # For initial delay
+    }
+    """
 
-    # Step 1: Trigger Alt+Tab ONCE when gesture first appears
-    if yellow and not state.get("active", False):
-        pyg.keyDown("alt")
-        pyg.press("tab")
-        state["active"] = True
-        state["start"] = now
-
-    # Step 2: Keep holding Alt while g
-    # 
-    # 
-    # 
-    # 
-    # 
-    # esture stays active
-    if yellow and state.get("active"):
+    # ---------------------------------
+    # 1) Gesture ended → EXIT Alt+Tab
+    # ---------------------------------
+    if not yellow:
+        if state["active"]:
+            pyg.keyUp("alt")  # release alt safely
+        state["active"] = False
+        state["last_time"] = None
+        state["start_hold"] = None
         return state
 
-    # Step 3: Gesture ended → release Alt after 1 second cooldown
+    # ---------------------------------
+    # 2) Gesture is on: start initial hold timer
+    # ---------------------------------
+    if state["start_hold"] is None:
+        state["start_hold"] = time.time()
+        return state
 
-    if state.get("active") and not yellow:
-        if now - state["start"] > 1:
-            pyg.keyUp("alt")
-            state["active"] = False
+    # Must hold for 0.25 sec to activate Alt+Tab
+    if not state["active"]:
+        if time.time() - state["start_hold"] >= 0.25:
+            pyg.keyDown("alt")       # hold alt
+            pyg.keyDown("tab")       # cycle once
+            pyg.keyUp("tab")
+            state["active"] = True
+            state["last_time"] = time.time()
+        return state
+
+    # ---------------------------------
+    # 3) Already active → repeat every 0.5 sec
+    # ---------------------------------
+    now = time.time()
+    if now - state["last_time"] >= 0.5:
+        pyg.keyDown("tab")
+        pyg.keyUp("tab")
+        state["last_time"] = now
 
     return state
 
@@ -271,11 +291,13 @@ def gesture_peace_sign_show(image, l, min_angle=25):
 
 # -----------------------------------------------------
 # MAIN PROGRAM
+
 # -----------------------------------------------------
 cap = cv2.VideoCapture(0)
 
 prev_x, prev_y = None, None
 click_state = False
+
 hold_start_time = None
 
 yellow_state = {"active": False, "last_time": None}
@@ -296,7 +318,11 @@ make_window_invisible(hwnd)
 fourcc = cv2.VideoWriter_fourcc(*'XVID')
 frame_width = int(cap.get(3))
 frame_height = int(cap.get(4))
+
+
 out = cv2.VideoWriter("gesture_record.avi", fourcc, 20.0, (frame_width, frame_height))
+
+
 
 # Countdown
 start_time = time.time()
@@ -304,8 +330,8 @@ COUNTDOWN_DURATION = 5
 
 with mp_hands.Hands(
     model_complexity=0,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
+    min_detection_confidence=0.6,
+    min_tracking_confidence=0.6
 ) as hands:
 
     while cap.isOpened():
@@ -427,7 +453,9 @@ with mp_hands.Hands(
         out.write(image)
 
         cv2.imshow(WINDOW_NAME, cv2.flip(image, 1))
-        maintain_window(WINDOW_NAME)
+        if not yellow_state["active"]:
+                 maintain_window(WINDOW_NAME)
+
 
         if cv2.waitKey(5) & 0xFF == 27:
             break
