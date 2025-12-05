@@ -16,7 +16,7 @@ WINDOW_VISIBLE = True  # <---- SET True TO SHOW, False TO HIDE
 
 
 # -----------------------------------------------------
-#  SET WINDOW VISIBILITY  (NEW)
+#  SET WINDOW VISIBILITY  
 # -----------------------------------------------------
 def set_window_visibility(hwnd, visible):
     if visible:
@@ -41,7 +41,7 @@ def set_window_visibility(hwnd, visible):
 
 
 # -----------------------------------------------------
-# WINDOW CONTROLLER  (TOPMOST REMOVED)
+# WINDOW CONTROLLER  
 # -----------------------------------------------------
 def send_window_to_background(hwnd):
     ctypes.windll.user32.SetWindowPos(
@@ -62,9 +62,6 @@ def maintain_window(window_name):
 
 
 
-# -----------------------------------------------------
-# REST OF YOUR CODE (UNCHANGED)
-# -----------------------------------------------------
 
 def draw_overlay_box(image, box):
     (box_left, box_top, box_right, box_bottom) = box
@@ -245,9 +242,6 @@ def gesture_thumb_tip(image, l):
     return False
 
 
-# -----------------------------
-# NEW ENTER KEY GESTURE
-# -----------------------------
 def gesture_enter_condition(image, l):
     h, w, _ = image.shape
 
@@ -305,9 +299,7 @@ cv2.moveWindow(WINDOW_NAME, 0, 0)
 
 hwnd = win32gui.FindWindow(None, WINDOW_NAME)
 
-# APPLY VISIBILITY TOGGLE  ---------------------------
 set_window_visibility(hwnd, WINDOW_VISIBLE)
-# ----------------------------------------------------
 
 fourcc = cv2.VideoWriter_fourcc(*'XVID')
 frame_width = int(cap.get(3))
