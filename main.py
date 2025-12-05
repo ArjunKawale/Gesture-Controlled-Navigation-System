@@ -10,6 +10,24 @@ import math
 mp_hands = mp.solutions.hands
 
 # -----------------------------------------------------
+# MAKE WINDOW INVISIBLE (OBS CAN STILL CAPTURE)
+# -----------------------------------------------------
+def make_window_invisible(hwnd):
+    # add layered style
+    style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+    win32gui.SetWindowLong(
+        hwnd,
+        win32con.GWL_EXSTYLE,
+        style | win32con.WS_EX_LAYERED
+    )
+
+    # full transparency (0 opacity)
+    ctypes.windll.user32.SetLayeredWindowAttributes(
+        hwnd, 0, 0, win32con.LWA_ALPHA
+    )
+
+
+# -----------------------------------------------------
 # WINDOW CONTROLLER
 # -----------------------------------------------------
 def maintain_window(window_name):
@@ -92,6 +110,7 @@ def gesture_left_click(image, x8, y8, x12, y12, y16, y20, y7, click_state):
 
     return click_state, blue_click
 
+
 # -----------------------------------------------------
 # HOLD (DRAG)
 # -----------------------------------------------------
@@ -114,6 +133,7 @@ def gesture_hold(image, x8, y8, x12, y12, box, prev_x, prev_y, hold_state):
     pyg.moveTo(mapped_x, mapped_y)
     return prev_x, prev_y, hold_state
 
+
 # -----------------------------------------------------
 # NORMAL MOVEMENT
 # -----------------------------------------------------
@@ -134,7 +154,7 @@ def handle_gesture_actions(image, x8, y8, inside, blue_click, box, prev_x, prev_
 
 
 # -----------------------------------------------------
-# YELLOW (ALT+TAB) + Repeat
+# YELLOW (ALT+TAB)
 # -----------------------------------------------------
 def gesture_yellow(image, pts):
 
@@ -162,31 +182,42 @@ def gesture_yellow(image, pts):
     return cond
 
 
-def gesture_alt_tab_repeat(yellow, state):
-    if not yellow:
-        if state["active"]:
-            pyg.keyUp("alt")
-        state["active"] = False
-        state["last_time"] = None
-        return state
+def gesture_alt_tab_hardcoded(yellow, state):
+    now = time.time()
 
-    if yellow and not state["active"]:
+    # Step 1: Trigger Alt+Tab ONCE when gesture first appears
+    if yellow and not state.get("active", False):
         pyg.keyDown("alt")
         pyg.press("tab")
         state["active"] = True
-        state["last_time"] = time.time()
+        state["start"] = now
+
+    # Step 2: Keep holding Alt while g
+    # 
+    # 
+    # 
+    # 
+    # 
+    # esture stays active
+    if yellow and state.get("active"):
         return state
 
-    if state["active"]:
-        now = time.time()
-        if now - state["last_time"] >= 1.0:
-            pyg.press("tab")
-            state["last_time"] = now
+    # Step 3: Gesture ended → release Alt after 1 second cooldown
+
+    if state.get("active") and not yellow:
+        if now - state["start"] > 1:
+            pyg.keyUp("alt")
+            state["active"] = False
 
     return state
 
+
+
+
+
+
 # -----------------------------------------------------
-# THUMB TIP → Press UP
+# THUMB TIP → UP
 # -----------------------------------------------------
 def gesture_thumb_tip(image, l):
     y4 = int(l[4].y * image.shape[0])
@@ -209,7 +240,7 @@ def gesture_thumb_tip(image, l):
     return False
 
 # -----------------------------------------------------
-# PEACE SIGN → Press ENTER
+# PEACE SIGN → ENTER
 # -----------------------------------------------------
 def gesture_peace_sign_show(image, l, min_angle=25):
     h, w, _ = image.shape
@@ -238,9 +269,8 @@ def gesture_peace_sign_show(image, l, min_angle=25):
 
     return False
 
-
 # -----------------------------------------------------
-# MAIN PROGRAM (WITH 3-SECOND COUNTDOWN)
+# MAIN PROGRAM
 # -----------------------------------------------------
 cap = cv2.VideoCapture(0)
 
@@ -255,17 +285,22 @@ peace_state = {"active": False, "pressed": False}
 
 WINDOW_NAME = "Gesture Mouse"
 cv2.namedWindow(WINDOW_NAME)
+cv2.resizeWindow(WINDOW_NAME, 1, 1)
+cv2.moveWindow(WINDOW_NAME, 0, 0)
 
-# Video Recorder
+# ---- make invisible ----
+hwnd = win32gui.FindWindow(None, WINDOW_NAME)
+make_window_invisible(hwnd)
+
+# Recorder
 fourcc = cv2.VideoWriter_fourcc(*'XVID')
 frame_width = int(cap.get(3))
 frame_height = int(cap.get(4))
 out = cv2.VideoWriter("gesture_record.avi", fourcc, 20.0, (frame_width, frame_height))
 
-# ---- COUNTDOWN ----
+# Countdown
 start_time = time.time()
 COUNTDOWN_DURATION = 5
-
 
 with mp_hands.Hands(
     model_complexity=0,
@@ -284,47 +319,31 @@ with mp_hands.Hands(
         now = time.time()
         elapsed = now - start_time
 
-        # -------------------------------------------------
-        # BEFORE COUNTDOWN FINISHES → FREEZE EVERYTHING
-        # -------------------------------------------------
         if elapsed < COUNTDOWN_DURATION:
-
             remaining = int(COUNTDOWN_DURATION - elapsed)
 
-            # --- MIRRORED WHITE TEXT + BLACK OUTLINE ---
             text = f"Starting in {remaining}"
             font = cv2.FONT_HERSHEY_SIMPLEX
             scale = 1
             thickness = 2
 
-            # Flip first
             flipped = cv2.flip(image, 1)
 
-            # Outline
             cv2.putText(flipped, text, (20, 40), font, scale,
                         (0, 0, 0), thickness + 2, cv2.LINE_AA)
-            # White text
             cv2.putText(flipped, text, (20, 40), font, scale,
                         (255, 255, 255), thickness, cv2.LINE_AA)
 
-            # Flip back
             image = cv2.flip(flipped, 1)
-
-            # Record
             out.write(image)
 
-            # Show flipped
             cv2.imshow(WINDOW_NAME, cv2.flip(image, 1))
             maintain_window(WINDOW_NAME)
 
             if cv2.waitKey(5) & 0xFF == 27:
                 break
 
-            continue  # <<< IMPORTANT: SKIP EVERYTHING ELSE
-
-        # -------------------------------------------------
-        # AFTER COUNTDOWN → NORMAL GESTURES
-        # -------------------------------------------------
+            continue
 
         image.flags.writeable = False
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -363,7 +382,8 @@ with mp_hands.Hands(
                         "y15": y15, "y11": y11, "y14": y14
                     }
                 )
-                yellow_state = gesture_alt_tab_repeat(yellow, yellow_state)
+                yellow_state = gesture_alt_tab_hardcoded(yellow, yellow_state)
+
 
                 thumb_active = gesture_thumb_tip(image, l)
                 if thumb_active and not thumb_state["active"]:
